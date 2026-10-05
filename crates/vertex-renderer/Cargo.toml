@@ -8,3 +8,4 @@ license.workspace = true
 wgpu = "27"
 winit = "0.30"
 bytemuck = { version = "1", features = ["derive"] }
+glam = "0.30"
