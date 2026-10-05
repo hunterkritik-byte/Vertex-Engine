@@ -9,6 +9,7 @@ vertex-core = { path = "../vertex-core" }
 vertex-renderer = { path = "../vertex-renderer" }
 winit.workspace = true
 pollster = "0.4"
+glam = "0.30"
 wgpu = "27"
 egui = "0.33"
 egui-wgpu = "0.33"
