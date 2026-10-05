@@ -10,6 +10,8 @@ vertex-renderer = { path = "../vertex-renderer" }
 winit.workspace = true
 pollster = "0.4"
 glam = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 wgpu = "27"
 egui = "0.33"
 egui-wgpu = "0.33"
