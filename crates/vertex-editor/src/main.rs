@@ -31,6 +31,7 @@ impl ApplicationHandler for Editor {
             let _mesh = Mesh::triangle("Triangle Mesh");
 
             self.engine.start();
+            self.camera.position = [0.0, 0.0, 5.0];
             self.scene = Some(scene);
             self.window = Some(window);
         }
