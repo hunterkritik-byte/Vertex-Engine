@@ -8,7 +8,7 @@ use vertex_core::{camera::Camera, scene::Scene, Engine};
 use vertex_renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     window::{Window, WindowId},
 };
@@ -33,6 +33,7 @@ struct Editor {
     history: Vec<Scene>,
     redo_stack: Vec<Scene>,
     scene_path: PathBuf,
+    mouse_press: Option<(f64, f64)>,
 }
 
 impl Default for Editor {
@@ -54,6 +55,7 @@ impl Default for Editor {
             history: Vec::new(),
             redo_stack: Vec::new(),
             scene_path: PathBuf::from("scene.vertexscene"),
+            mouse_press: None,
         }
     }
 }
@@ -94,6 +96,46 @@ impl Editor {
                 self.selected = 0;
             }
         }
+    }
+
+    fn pick_entity(&mut self, cursor: (f64, f64), size: (u32, u32)) {
+        let x = (cursor.0 as f32 / size.0.max(1) as f32) * 2.0 - 1.0;
+        let y = 1.0 - (cursor.1 as f32 / size.1.max(1) as f32) * 2.0;
+        let inv = self.camera.view_projection(size.0 as f32 / size.1.max(1) as f32).inverse();
+        let a = inv * Vec4::new(x, y, 0.0, 1.0);
+        let b = inv * Vec4::new(x, y, 1.0, 1.0);
+        let origin = a.truncate() / a.w;
+        let direction = (b.truncate() / b.w - origin).normalize();
+        let mut hit = None;
+        let mut nearest = f32::MAX;
+        for (i, entity) in self.scene.entities.iter().enumerate() {
+            let t = &entity.transform;
+            let model = Mat4::from_scale_rotation_translation(
+                Vec3::from_array(t.scale),
+                glam::Quat::from_euler(glam::EulerRot::XYZ, t.rotation[0].to_radians(), t.rotation[1].to_radians(), t.rotation[2].to_radians()),
+                Vec3::from_array(t.position),
+            );
+            let inv_model = model.inverse();
+            let o = (inv_model * origin.extend(1.0)).truncate();
+            let d = (inv_model * direction.extend(0.0)).truncate().normalize();
+            let mut tmin = -f32::INFINITY;
+            let mut tmax = f32::INFINITY;
+            for axis in 0..3 {
+                if d[axis].abs() < 0.0001 {
+                    if o[axis].abs() > 1.0 { tmin = 1.0; tmax = 0.0; break; }
+                } else {
+                    let q1 = (-1.0 - o[axis]) / d[axis];
+                    let q2 = (1.0 - o[axis]) / d[axis];
+                    tmin = tmin.max(q1.min(q2));
+                    tmax = tmax.min(q1.max(q2));
+                }
+            }
+            if tmax >= tmin && tmax >= 0.0 && tmin < nearest {
+                nearest = tmin.max(0.0);
+                hit = Some(i);
+            }
+        }
+        if let Some(i) = hit { self.selected = i; }
     }
 
     fn draw_ui(&mut self) {
@@ -167,6 +209,20 @@ impl Editor {
                 ui.label("GPU: wgpu");
             });
         });
+    }
+
+    fn camera_mouse(&mut self, button: MouseButton, dx: f32, dy: f32) {
+        match button {
+            MouseButton::Right => {
+                self.camera.yaw -= dx * 0.005;
+                self.camera.pitch = (self.camera.pitch - dy * 0.005).clamp(-1.5, 1.5);
+            }
+            MouseButton::Middle => {
+                self.camera.position[0] -= dx * 0.01;
+                self.camera.position[1] += dy * 0.01;
+            }
+            _ => {}
+        }
     }
 
     fn render_ui(
@@ -311,13 +367,38 @@ impl ApplicationHandler for Editor {
                     window.request_redraw();
                 }
             }
-            WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. } => {
-                self.viewport_drag = state == winit::event::ElementState::Pressed;
-                if self.viewport_drag {
-                    self.last_cursor = None;
-                } else {
-                    self.last_cursor = None;
+            WindowEvent::MouseInput { state, button, .. } => {
+                if button == MouseButton::Left {
+                    if state == ElementState::Pressed {
+                        self.viewport_drag = true;
+                        self.mouse_press = self.last_cursor;
+                        self.last_cursor = None;
+                    } else {
+                        self.viewport_drag = false;
+                        if let (Some(start), Some(end)) = (self.mouse_press, self.last_cursor) {
+                            let dx = end.0 - start.0;
+                            let dy = end.1 - start.1;
+                            if dx * dx + dy * dy < 36.0 {
+                                self.snapshot();
+                                self.pick_entity(end, (window.inner_size().width, window.inner_size().height));
+                            }
+                        }
+                        self.mouse_press = None;
+                        self.last_cursor = None;
+                    }
+                } else if button == MouseButton::Middle || button == MouseButton::Right {
+                    self.camera_drag = (state == ElementState::Pressed).then_some(button);
+                    if state == ElementState::Pressed { self.last_cursor = None; }
+                    else { self.last_cursor = None; }
                 }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let amount = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 0.5,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.01,
+                };
+                self.camera.position[2] = (self.camera.position[2] - amount).clamp(1.0, 100.0);
+                window.request_redraw();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
