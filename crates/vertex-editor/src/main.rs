@@ -214,14 +214,14 @@ impl ApplicationHandler for Editor {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let (device, queue, surface, width, height) = {
-                    let Some(renderer) = self.renderer.as_ref() else { return };
-                    (&renderer.device, &renderer.queue, &renderer.surface, renderer.config.width, renderer.config.height)
+                let (width, height) = match self.renderer.as_ref() {
+                    Some(renderer) => (renderer.config.width, renderer.config.height),
+                    None => return,
                 };
                 let aspect = width as f32 / height.max(1) as f32;
                 let view_proj = self.camera.view_projection(aspect);
 
-                let frame = match surface.get_current_texture() {
+                let frame = match self.renderer.as_ref().unwrap().surface.get_current_texture() {
                     Ok(frame) => frame,
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         if let Some(renderer) = self.renderer.as_mut() {
@@ -232,14 +232,14 @@ impl ApplicationHandler for Editor {
                     Err(wgpu::SurfaceError::OutOfMemory) => { event_loop.exit(); return; }
                     Err(_) => return,
                 };
-                let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = device.create_command_encoder(
+                let mut encoder = self.renderer.as_ref().unwrap().device.create_command_encoder(
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
-                if let Some(renderer) = self.renderer.as_ref() {
-                    renderer.render_to_view(&mut encoder, &view, view_proj);
-                }
-                self.render_ui(&window, device, queue, &view, &mut encoder);
+                let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj);
+                let device = self.renderer.as_ref().unwrap().device.clone();
+                let queue = self.renderer.as_ref().unwrap().queue.clone();
+                self.render_ui(&window, &device, &queue, &view, &mut encoder);
                 queue.submit(Some(encoder.finish()));
                 frame.present();
                 window.request_redraw();
