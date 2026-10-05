@@ -168,6 +168,10 @@ impl Editor {
 
             });
         });
+        if do_undo { self.undo(); }
+        if do_redo { self.redo_scene(); }
+        if do_save { self.save_scene(); }
+        if do_load { self.load_scene(); }
 
         egui::SidePanel::left("hierarchy").default_width(220.0).show(&self.egui_ctx, |ui| {
             ui.heading("Hierarchy");
