@@ -77,6 +77,7 @@ impl<'window> Renderer<'window> {
             required_limits: wgpu::Limits::default(),
             memory_hints: wgpu::MemoryHints::Performance,
             trace: wgpu::Trace::Off,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
         }).await.map_err(|e| format!("failed to create GPU device: {e}"))?;
 
         let size = window.inner_size();
@@ -232,7 +233,7 @@ impl<'window> Renderer<'window> {
                     }),
                     stencil_ops: None,
                 }),
-                occlusion_query_set: None, timestamp_writes: None, multiview_mask: None,
+                occlusion_query_set: None, timestamp_writes: None,
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
