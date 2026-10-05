@@ -29,6 +29,10 @@ struct Editor {
     gizmo: GizmoMode,
     viewport_drag: bool,
     last_cursor: Option<(f64, f64)>,
+    camera_drag: Option<MouseButton>,
+    history: Vec<Scene>,
+    redo_stack: Vec<Scene>,
+    scene_path: PathBuf,
 }
 
 impl Default for Editor {
@@ -46,11 +50,52 @@ impl Default for Editor {
             gizmo: GizmoMode::Translate,
             viewport_drag: false,
             last_cursor: None,
+            camera_drag: None,
+            history: Vec::new(),
+            redo_stack: Vec::new(),
+            scene_path: PathBuf::from("scene.vertexscene"),
         }
     }
 }
 
 impl Editor {
+    fn snapshot(&mut self) {
+        self.history.push(self.scene.clone());
+        self.redo_stack.clear();
+        if self.history.len() > 64 { self.history.remove(0); }
+    }
+
+    fn undo(&mut self) {
+        if let Some(scene) = self.history.pop() {
+            self.redo_stack.push(self.scene.clone());
+            self.scene = scene;
+            self.selected = self.selected.min(self.scene.entities.len().saturating_sub(1));
+        }
+    }
+
+    fn redo_scene(&mut self) {
+        if let Some(scene) = self.redo_stack.pop() {
+            self.history.push(self.scene.clone());
+            self.scene = scene;
+        }
+    }
+
+    fn save_scene(&self) {
+        if let Ok(text) = serde_json::to_string_pretty(&self.scene) {
+            let _ = fs::write(&self.scene_path, text);
+        }
+    }
+
+    fn load_scene(&mut self) {
+        if let Ok(text) = fs::read_to_string(&self.scene_path) {
+            if let Ok(scene) = serde_json::from_str::<Scene>(&text) {
+                self.history.push(self.scene.clone());
+                self.scene = scene;
+                self.selected = 0;
+            }
+        }
+    }
+
     fn draw_ui(&mut self) {
         egui::TopBottomPanel::top("toolbar").show(&self.egui_ctx, |ui| {
             ui.horizontal(|ui| {
@@ -74,7 +119,7 @@ impl Editor {
                     self.gizmo = GizmoMode::Scale;
                 }
                 ui.separator();
-                ui.label("Drag in viewport to apply gizmo");
+                if ui.button("Undo").clicked() { self.undo(); }\n                if ui.button("Redo").clicked() { self.redo_scene(); }\n                if ui.button("Save").clicked() { self.save_scene(); }\n                if ui.button("Load").clicked() { self.load_scene(); }
 
             });
         });
