@@ -1,4 +1,4 @@
-use vertex_core::Engine;
+use vertex_core::{camera::Camera, mesh::Mesh, scene::Scene, Engine};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -10,16 +10,28 @@ use winit::{
 struct Editor {
     window: Option<Window>,
     engine: Engine,
+    scene: Option<Scene>,
+    camera: Camera,
 }
 
 impl ApplicationHandler for Editor {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let window = event_loop
-                .create_window(Window::default_attributes().with_title("Vertex Engine"))
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("Vertex Engine — Editor")
+                        .with_inner_size(winit::dpi::PhysicalSize::new(1280, 720)),
+                )
                 .expect("failed to create editor window");
 
+            let mut scene = Scene::new();
+            scene.spawn("Main Camera");
+            scene.spawn("Triangle Mesh");
+            let _mesh = Mesh::triangle("Triangle Mesh");
+
             self.engine.start();
+            self.scene = Some(scene);
             self.window = Some(window);
         }
     }
@@ -38,6 +50,9 @@ impl ApplicationHandler for Editor {
 
 fn main() -> Result<(), winit::error::EventLoopError> {
     let event_loop = EventLoop::new()?;
-    let mut editor = Editor::default();
+    let mut editor = Editor {
+        camera: Camera::new(),
+        ..Default::default()
+    };
     event_loop.run_app(&mut editor)
 }
