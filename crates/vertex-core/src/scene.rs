@@ -1,6 +1,6 @@
-//! Minimal scene representation.
+//! Minimal scene representation.\n\nuse serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
     pub position: [f32; 3],
     pub rotation: [f32; 3],
@@ -17,12 +17,12 @@ impl Default for Transform {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scene {
     pub entities: Vec<Entity>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub name: String,
     pub transform: Transform,
