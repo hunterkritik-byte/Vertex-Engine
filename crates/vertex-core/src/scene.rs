@@ -17,7 +17,7 @@ impl Default for Transform {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Scene {
     pub entities: Vec<Entity>,
 }
