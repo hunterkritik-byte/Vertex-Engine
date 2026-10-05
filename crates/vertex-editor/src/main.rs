@@ -139,53 +139,62 @@ impl Editor {
     }
 
     fn draw_ui(&mut self) {
+        // Collect toolbar actions first. Mutating self from inside an egui closure
+        // while self.egui_ctx is borrowed triggers E0500/E0502.
+        let mut play = false;
+        let mut stop = false;
+        let mut undo = false;
+        let mut redo = false;
+        let mut save = false;
+        let mut load = false;
+        let mut gizmo_mode = None;
+
         egui::TopBottomPanel::top("toolbar").show(&self.egui_ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Vertex Engine");
                 ui.separator();
-                if ui.button("▶ Play").clicked() {
-                    self.engine.start();
-                }
-                if ui.button("■ Stop").clicked() {
-                    self.engine.stop();
-                }
+                if ui.button("▶ Play").clicked() { play = true; }
+                if ui.button("■ Stop").clicked() { stop = true; }
                 ui.separator();
                 ui.label("Gizmo:");
                 if ui.selectable_label(self.gizmo == GizmoMode::Translate, "Move").clicked() {
-                    self.gizmo = GizmoMode::Translate;
+                    gizmo_mode = Some(GizmoMode::Translate);
                 }
                 if ui.selectable_label(self.gizmo == GizmoMode::Rotate, "Rotate").clicked() {
-                    self.gizmo = GizmoMode::Rotate;
+                    gizmo_mode = Some(GizmoMode::Rotate);
                 }
                 if ui.selectable_label(self.gizmo == GizmoMode::Scale, "Scale").clicked() {
-                    self.gizmo = GizmoMode::Scale;
+                    gizmo_mode = Some(GizmoMode::Scale);
                 }
                 ui.separator();
-                if ui.button("Undo").clicked() { self.undo(); }
-                if ui.button("Redo").clicked() { self.redo_scene(); }
-                if ui.button("Save").clicked() { self.save_scene(); }
-                if ui.button("Load").clicked() { self.load_scene(); }
-
+                if ui.button("Undo").clicked() { undo = true; }
+                if ui.button("Redo").clicked() { redo = true; }
+                if ui.button("Save").clicked() { save = true; }
+                if ui.button("Load").clicked() { load = true; }
             });
         });
-        if do_undo { self.undo(); }
-        if do_redo { self.redo_scene(); }
-        if do_save { self.save_scene(); }
-        if do_load { self.load_scene(); }
 
+        if play { self.engine.start(); }
+        if stop { self.engine.stop(); }
+        if let Some(mode) = gizmo_mode { self.gizmo = mode; }
+        if undo { self.undo(); }
+        if redo { self.redo_scene(); }
+        if save { self.save_scene(); }
+        if load { self.load_scene(); }
+
+        let mut hierarchy_selection = None;
         egui::SidePanel::left("hierarchy").default_width(220.0).show(&self.egui_ctx, |ui| {
             ui.heading("Hierarchy");
             ui.separator();
-            let mut hierarchy_selection = None;
             for (index, entity) in self.scene.entities.iter().enumerate() {
                 if ui.selectable_label(self.selected == index, &entity.name).clicked() {
                     hierarchy_selection = Some(index);
                 }
             }
-            if let Some(index) = hierarchy_selection {
-                self.selected = index;
-            }
         });
+        if let Some(index) = hierarchy_selection {
+            self.selected = index;
+        }
 
         egui::SidePanel::right("inspector").default_width(280.0).show(&self.egui_ctx, |ui| {
             ui.heading("Inspector");
@@ -201,9 +210,11 @@ impl Editor {
                         ui.label(label);
                         ui.horizontal(|ui| {
                             for (axis, value) in values.iter_mut().enumerate() {
-                                ui.add(egui::DragValue::new(value)
-                                    .speed(speed)
-                                    .prefix(["X ", "Y ", "Z "][axis]));
+                                ui.add(
+                                    egui::DragValue::new(value)
+                                        .speed(speed)
+                                        .prefix(["X ", "Y ", "Z "][axis]),
+                                );
                             }
                         });
                     }
