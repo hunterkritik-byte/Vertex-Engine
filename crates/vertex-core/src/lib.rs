@@ -1,9 +1,10 @@
 //! Core types and engine lifecycle for Vertex Engine.
 
+pub mod scene;
+
 /// Vertex Engine version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Minimal engine state used by the first editor prototype.
 #[derive(Debug, Default)]
 pub struct Engine {
     running: bool,
