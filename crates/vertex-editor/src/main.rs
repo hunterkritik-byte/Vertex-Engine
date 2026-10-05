@@ -45,7 +45,8 @@ impl ApplicationHandler for Editor {
                 .expect("failed to create editor window"),
         );
 
-        let renderer = match pollster::block_on(Renderer::new(&window)) {
+        let window_for_renderer = Box::leak(Box::new(window.clone()));
+        let renderer = match pollster::block_on(Renderer::new(window_for_renderer)) {
             Ok(renderer) => renderer,
             Err(error) => {
                 eprintln!("Vertex renderer initialization failed: {error}");
