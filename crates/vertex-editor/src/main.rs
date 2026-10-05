@@ -161,7 +161,10 @@ impl Editor {
                     self.gizmo = GizmoMode::Scale;
                 }
                 ui.separator();
-                if ui.button("Undo").clicked() { self.undo(); }\n                if ui.button("Redo").clicked() { self.redo_scene(); }\n                if ui.button("Save").clicked() { self.save_scene(); }\n                if ui.button("Load").clicked() { self.load_scene(); }
+                if ui.button("Undo").clicked() { self.undo(); }
+                if ui.button("Redo").clicked() { self.redo_scene(); }
+                if ui.button("Save").clicked() { self.save_scene(); }
+                if ui.button("Load").clicked() { self.load_scene(); }
 
             });
         });
