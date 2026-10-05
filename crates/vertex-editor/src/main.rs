@@ -169,10 +169,14 @@ impl Editor {
         egui::SidePanel::left("hierarchy").default_width(220.0).show(&self.egui_ctx, |ui| {
             ui.heading("Hierarchy");
             ui.separator();
+            let mut hierarchy_selection = None;
             for (index, entity) in self.scene.entities.iter().enumerate() {
                 if ui.selectable_label(self.selected == index, &entity.name).clicked() {
-                    self.selected = index;
+                    hierarchy_selection = Some(index);
                 }
+            }
+            if let Some(index) = hierarchy_selection {
+                self.selected = index;
             }
         });
 
