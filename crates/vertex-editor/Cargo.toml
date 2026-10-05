@@ -9,3 +9,4 @@ vertex-core = { path = "../vertex-core" }
 vertex-renderer = { path = "../vertex-renderer" }
 winit.workspace = true
 pollster = "0.4"
+wgpu = "27"
