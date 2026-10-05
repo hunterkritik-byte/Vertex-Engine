@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egui::ViewportId;
 use egui_wgpu::wgpu;
-use vertex_core::{camera::Camera, mesh::Mesh, scene::Scene, Engine};
+use vertex_core::{camera::Camera, scene::Scene, Engine};
 use vertex_renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
@@ -214,28 +214,33 @@ impl ApplicationHandler for Editor {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let Some(renderer) = self.renderer.as_mut() else { return };
-                let aspect = renderer.config.width as f32 / renderer.config.height.max(1) as f32;
+                let (device, queue, surface, width, height) = {
+                    let Some(renderer) = self.renderer.as_ref() else { return };
+                    (&renderer.device, &renderer.queue, &renderer.surface, renderer.config.width, renderer.config.height)
+                };
+                let aspect = width as f32 / height.max(1) as f32;
                 let view_proj = self.camera.view_projection(aspect);
 
-                let frame = match renderer.surface.get_current_texture() {
+                let frame = match surface.get_current_texture() {
                     Ok(frame) => frame,
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        renderer.resize(renderer.config.width, renderer.config.height);
+                        if let Some(renderer) = self.renderer.as_mut() {
+                            renderer.resize(width, height);
+                        }
                         return;
                     }
                     Err(wgpu::SurfaceError::OutOfMemory) => { event_loop.exit(); return; }
                     Err(_) => return,
                 };
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = renderer.device.create_command_encoder(
+                let mut encoder = device.create_command_encoder(
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
-                renderer.render_to_view(&mut encoder, &view, view_proj);
-                let device = &renderer.device;
-                let queue = &renderer.queue;
+                if let Some(renderer) = self.renderer.as_ref() {
+                    renderer.render_to_view(&mut encoder, &view, view_proj);
+                }
                 self.render_ui(&window, device, queue, &view, &mut encoder);
-                renderer.queue.submit(Some(encoder.finish()));
+                queue.submit(Some(encoder.finish()));
                 frame.present();
                 window.request_redraw();
             }
