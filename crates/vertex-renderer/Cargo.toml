@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 wgpu = "27"
+winit = "0.30"
+bytemuck = { version = "1", features = ["derive"] }
