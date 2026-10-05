@@ -340,7 +340,13 @@ impl ApplicationHandler for Editor {
 
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                if self.viewport_drag {
+                if let Some(button) = self.camera_drag {
+                    if let Some((last_x, last_y)) = self.last_cursor {
+                        self.camera_mouse(button, (position.x-last_x) as f32, (position.y-last_y) as f32);
+                    }
+                    self.last_cursor = Some((position.x, position.y));
+                    window.request_redraw();
+                } else if self.viewport_drag {
                     if let Some((last_x, last_y)) = self.last_cursor {
                         let dx = (position.x - last_x) as f32;
                         let dy = (position.y - last_y) as f32;
@@ -364,6 +370,20 @@ impl ApplicationHandler for Editor {
                         }
                     }
                     self.last_cursor = Some((position.x, position.y));
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    use winit::keyboard::{KeyCode, PhysicalKey};
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::KeyW) => self.gizmo = GizmoMode::Translate,
+                        PhysicalKey::Code(KeyCode::KeyE) => self.gizmo = GizmoMode::Rotate,
+                        PhysicalKey::Code(KeyCode::KeyR) => self.gizmo = GizmoMode::Scale,
+                        PhysicalKey::Code(KeyCode::KeyZ) => self.undo(),
+                        PhysicalKey::Code(KeyCode::KeyY) => self.redo_scene(),
+                        _ => {}
+                    }
                     window.request_redraw();
                 }
             }
