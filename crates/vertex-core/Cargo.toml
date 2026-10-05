@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 glam = "0.30"
+serde = { version = "1", features = ["derive"] }
