@@ -1,7 +1,4 @@
-//! GPU rendering primitives for Vertex Engine.
-//!
-//! The renderer is intentionally split from the editor so the same rendering
-//! backend can later power both the editor viewport and shipped games.
+//! GPU rendering foundation for Vertex Engine.
 
 use bytemuck::{Pod, Zeroable};
 
@@ -31,11 +28,36 @@ pub const TRIANGLE_VERTICES: &[Vertex] = &[
     Vertex { position: [0.7, -0.7, 0.0], color: [0.0, 0.0, 1.0] },
 ];
 
-#[derive(Debug, Default)]
-pub struct Renderer;
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct CameraUniform {
+    pub view_proj: [[f32; 4]; 4],
+}
+
+pub struct Renderer {
+    pub instance: wgpu::Instance,
+    pub surface: Option<wgpu::Surface<'static>>,
+}
 
 impl Renderer {
     pub fn new() -> Self {
-        Self
+        Self {
+            instance: wgpu::Instance::default(),
+            surface: None,
+        }
+    }
+
+    pub fn create_surface(
+        &mut self,
+        window: &'static winit::window::Window,
+    ) -> Result<(), wgpu::CreateSurfaceError> {
+        self.surface = Some(self.instance.create_surface(window)?);
+        Ok(())
+    }
+}
+
+impl Default for Renderer {
+    fn default() -> Self {
+        Self::new()
     }
 }
