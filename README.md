@@ -42,24 +42,58 @@ Vertex Engine is an experimental game engine built from the ground up with Rust,
 
 ## 🧩 Architecture
 
-```text
-Vertex Engine
-├── vertex-core
-│   ├── Scene / Entities
-│   ├── Transforms
-│   └── Camera
-├── vertex-renderer
-│   ├── wgpu GPU backend
-│   ├── Shaders
-│   ├── Meshes
-│   └── Depth rendering
-└── vertex-editor
-    ├── Hierarchy
-    ├── Inspector
-    ├── Scene View
-    ├── Selection
-    └── Transform tools
+### Interactive Architecture Map
+
+The repository architecture is also available as a Mermaid diagram. On GitHub, you can use the diagram controls provided by the viewer/browser to inspect the graph; for true **zoom + pan + draggable nodes**, see the interactive editor roadmap.
+
+```mermaid
+flowchart LR
+    Editor["🎮 Vertex Editor"]
+    Hierarchy["🌳 Hierarchy"]
+    Inspector["🔎 Inspector"]
+    Viewport["🖼️ Scene View"]
+    Gizmo["🧭 XYZ Gizmo"]
+    Core["🧠 Vertex Core"]
+    Scene["📦 Scene / Entities"]
+    Transform["📐 Transforms"]
+    Camera["📷 Camera"]
+    Renderer["⚡ Vertex Renderer"]
+    WGPU["🔥 wgpu / GPU"]
+    Shader["🎨 Shaders"]
+    Mesh["🔺 Meshes"]
+    Depth["🟦 Depth Buffer"]
+    SceneFile["💾 .vertexscene"]
+    
+    Editor --> Hierarchy
+    Editor --> Inspector
+    Editor --> Viewport
+    Viewport --> Gizmo
+    Hierarchy --> Scene
+    Inspector --> Transform
+    Gizmo --> Transform
+    Viewport --> Camera
+    Scene --> Transform
+    Scene --> Renderer
+    Transform --> Renderer
+    Camera --> Renderer
+    Renderer --> WGPU
+    Renderer --> Shader
+    Renderer --> Mesh
+    Renderer --> Depth
+    Scene <--> SceneFile
 ```
+
+### 🖱️ Diagram Options
+
+| Option | Status |
+|---|---|
+| Zoom / inspect architecture | ✅ Mermaid viewer |
+| Pan / move around diagram | ✅ Viewer/browser dependent |
+| Draggable nodes | 🚧 Planned interactive architecture viewer |
+| Collapse/expand systems | 🚧 Planned |
+| Click subsystem → source/docs | 🚧 Planned |
+| Live scene/editor graph | 🚧 Planned |
+
 
 ## 🛠️ Run
 
