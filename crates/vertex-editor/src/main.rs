@@ -34,6 +34,8 @@ struct Editor {
     redo_stack: Vec<Scene>,
     scene_path: PathBuf,
     mouse_press: Option<(f64, f64)>,
+    gizmo_axis: Option<usize>,
+    gizmo_drag_start: Option<(f64, f64)>,
 }
 
 impl Default for Editor {
@@ -56,6 +58,8 @@ impl Default for Editor {
             redo_stack: Vec::new(),
             scene_path: PathBuf::from("scene.vertexscene"),
             mouse_press: None,
+            gizmo_axis: None,
+            gizmo_drag_start: None,
         }
     }
 }
@@ -136,6 +140,74 @@ impl Editor {
             }
         }
         if let Some(i) = hit { self.selected = i; }
+    }
+
+    fn project_selected(&self, cursor_size: (u32, u32)) -> Option<egui::Pos2> {
+        let entity = self.scene.entities.get(self.selected)?;
+        let aspect = cursor_size.0 as f32 / cursor_size.1.max(1) as f32;
+        let clip = self.camera.view_projection(aspect)
+            * Vec4::new(entity.transform.position[0], entity.transform.position[1], entity.transform.position[2], 1.0);
+        if clip.w <= 0.0 { return None; }
+        let ndc = clip.truncate() / clip.w;
+        Some(egui::pos2(
+            (ndc.x * 0.5 + 0.5) * cursor_size.0 as f32,
+            (-ndc.y * 0.5 + 0.5) * cursor_size.1 as f32,
+        ))
+    }
+
+    fn gizmo_hit(&self, cursor: (f64, f64), size: (u32, u32)) -> Option<usize> {
+        let center = self.project_selected(size)?;
+        let p = egui::pos2(cursor.0 as f32, cursor.1 as f32);
+        let axes = [egui::vec2(75.0, 0.0), egui::vec2(0.0, -75.0), egui::vec2(-53.0, 53.0)];
+        axes.iter().enumerate().find_map(|(i, axis)| {
+            let end = center + *axis;
+            let v = end - center;
+            let w = p - center;
+            let t = (w.dot(v) / v.dot(v)).clamp(0.0, 1.0);
+            let distance = (w - v * t).length();
+            (distance < 12.0).then_some(i)
+        })
+    }
+
+    fn draw_gizmo(&self, ctx: &egui::Context, size: (u32, u32)) {
+        let Some(center) = self.project_selected(size) else { return };
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground, egui::Id::new("vertex-transform-gizmo")
+        ));
+        let axes = [
+            (egui::vec2(75.0, 0.0), egui::Color32::RED, "X"),
+            (egui::vec2(0.0, -75.0), egui::Color32::GREEN, "Y"),
+            (egui::vec2(-53.0, 53.0), egui::Color32::BLUE, "Z"),
+        ];
+        painter.circle_stroke(center, 9.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+        for (i, (offset, color, label)) in axes.into_iter().enumerate() {
+            let color = if self.gizmo_axis == Some(i) { egui::Color32::YELLOW } else { color };
+            let end = center + offset;
+            painter.line_segment([center, end], egui::Stroke::new(4.0, color));
+            painter.circle_filled(end, 8.0, color);
+            painter.text(end, egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+        }
+        painter.rect_stroke(
+            egui::Rect::from_center_size(center, egui::vec2(150.0, 150.0)),
+            2.0, egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(255, 255, 0, 110)),
+            egui::StrokeKind::Outside,
+        );
+    }
+
+    fn apply_gizmo_drag(&mut self, axis: usize, dx: f32, dy: f32) {
+        if let Some(entity) = self.scene.entities.get_mut(self.selected) {
+            let amount = match axis { 0 => dx, 1 => -dy, _ => (dx - dy) * 0.707 };
+            match self.gizmo {
+                GizmoMode::Translate => entity.transform.position[axis] += amount * 0.01,
+                GizmoMode::Rotate => entity.transform.rotation[axis] += amount * 0.5,
+                GizmoMode::Scale => {
+                    let factor = 1.0 + amount * 0.005;
+                    if axis == 0 || axis == 1 || axis == 2 {
+                        entity.transform.scale[axis] = (entity.transform.scale[axis] * factor.max(0.05)).max(0.05);
+                    }
+                }
+            }
+        }
     }
 
     fn draw_ui(&mut self) {
@@ -265,6 +337,7 @@ impl Editor {
             let ctx = self.egui_ctx.clone();
             ctx.run(raw_input, |_ctx| {
                 self.draw_ui();
+                self.draw_gizmo(&ctx, (window.inner_size().width, window.inner_size().height));
             })
         };
 
@@ -372,7 +445,9 @@ impl ApplicationHandler for Editor {
                     if let Some((last_x, last_y)) = self.last_cursor {
                         let dx = (position.x - last_x) as f32;
                         let dy = (position.y - last_y) as f32;
-                        if let Some(entity) = self.scene.entities.get_mut(self.selected) {
+                        if let Some(axis) = self.gizmo_axis {
+                            self.apply_gizmo_drag(axis, dx, dy);
+                        } else if let Some(entity) = self.scene.entities.get_mut(self.selected) {
                             match self.gizmo {
                                 GizmoMode::Translate => {
                                     entity.transform.position[0] += dx * 0.01;
@@ -384,9 +459,7 @@ impl ApplicationHandler for Editor {
                                 }
                                 GizmoMode::Scale => {
                                     let delta = (dx - dy) * 0.005;
-                                    for value in &mut entity.transform.scale {
-                                        *value = (*value + delta).max(0.05);
-                                    }
+                                    for value in &mut entity.transform.scale { *value = (*value + delta).max(0.05); }
                                 }
                             }
                         }
@@ -412,19 +485,24 @@ impl ApplicationHandler for Editor {
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left {
                     if state == ElementState::Pressed {
-                        self.viewport_drag = true;
-                        self.mouse_press = self.last_cursor;
-                        self.last_cursor = None;
+                        let cursor = self.last_cursor;
+                        self.gizmo_axis = cursor.and_then(|p| self.gizmo_hit(p, (window.inner_size().width, window.inner_size().height)));
+                        self.gizmo_drag_start = cursor;
+                        self.viewport_drag = self.gizmo_axis.is_some();
+                        if self.viewport_drag { self.snapshot(); }
+                        self.mouse_press = cursor;
+                        self.last_cursor = cursor;
                     } else {
-                        self.viewport_drag = false;
                         if let (Some(start), Some(end)) = (self.mouse_press, self.last_cursor) {
                             let dx = end.0 - start.0;
                             let dy = end.1 - start.1;
-                            if dx * dx + dy * dy < 36.0 {
-                                self.snapshot();
+                            if self.gizmo_axis.is_none() && dx * dx + dy * dy < 36.0 {
                                 self.pick_entity(end, (window.inner_size().width, window.inner_size().height));
                             }
                         }
+                        self.viewport_drag = false;
+                        self.gizmo_axis = None;
+                        self.gizmo_drag_start = None;
                         self.mouse_press = None;
                         self.last_cursor = None;
                     }
