@@ -81,7 +81,9 @@ impl ApplicationHandler for Editor {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = self.renderer.as_mut() {
-                    match renderer.render() {
+                    let aspect = renderer.config.width as f32 / renderer.config.height.max(1) as f32;
+                    let view_proj = self.camera.view_projection(aspect);
+                    match renderer.render(view_proj) {
                         Ok(()) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                             if let Some(window) = self.window.as_ref() {
