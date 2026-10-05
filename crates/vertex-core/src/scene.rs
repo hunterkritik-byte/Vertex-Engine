@@ -1,4 +1,6 @@
-//! Minimal scene representation.\n\nuse serde::{Deserialize, Serialize};
+//! Minimal scene representation.
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
