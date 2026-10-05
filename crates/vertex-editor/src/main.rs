@@ -48,7 +48,9 @@ impl Editor {
                 if ui.button("▶ Play").clicked() {
                     self.engine.start();
                 }
-                ui.button("■ Stop");
+                if ui.button("■ Stop").clicked() {
+                    self.engine.stop();
+                }
                 ui.separator();
                 ui.label("3D Scene");
             });
