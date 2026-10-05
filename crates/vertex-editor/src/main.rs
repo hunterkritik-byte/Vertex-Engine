@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use glam::{Mat4, Vec3};
+
 use egui::ViewportId;
 use egui_wgpu::wgpu;
 use vertex_core::{camera::Camera, scene::Scene, Engine};
@@ -11,6 +13,9 @@ use winit::{
     window::{Window, WindowId},
 };
 
+#[derive(Clone, Copy, PartialEq)]
+enum GizmoMode { Translate, Rotate, Scale }
+
 struct Editor {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer<'static>>,
@@ -21,6 +26,9 @@ struct Editor {
     scene: Scene,
     camera: Camera,
     selected: usize,
+    gizmo: GizmoMode,
+    viewport_drag: bool,
+    last_cursor: Option<(f64, f64)>,
 }
 
 impl Default for Editor {
@@ -35,6 +43,9 @@ impl Default for Editor {
             scene: Scene::new(),
             camera: Camera::new(),
             selected: 0,
+            gizmo: GizmoMode::Translate,
+            viewport_drag: false,
+            last_cursor: None,
         }
     }
 }
@@ -52,7 +63,19 @@ impl Editor {
                     self.engine.stop();
                 }
                 ui.separator();
-                ui.label("3D Scene");
+                ui.label("Gizmo:");
+                if ui.selectable_label(self.gizmo == GizmoMode::Translate, "Move").clicked() {
+                    self.gizmo = GizmoMode::Translate;
+                }
+                if ui.selectable_label(self.gizmo == GizmoMode::Rotate, "Rotate").clicked() {
+                    self.gizmo = GizmoMode::Rotate;
+                }
+                if ui.selectable_label(self.gizmo == GizmoMode::Scale, "Scale").clicked() {
+                    self.gizmo = GizmoMode::Scale;
+                }
+                ui.separator();
+                ui.label("Drag in viewport to apply gizmo");
+
             });
         });
 
@@ -215,6 +238,42 @@ impl ApplicationHandler for Editor {
         }
 
         match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                if self.viewport_drag {
+                    if let Some((last_x, last_y)) = self.last_cursor {
+                        let dx = (position.x - last_x) as f32;
+                        let dy = (position.y - last_y) as f32;
+                        if let Some(entity) = self.scene.entities.get_mut(self.selected) {
+                            match self.gizmo {
+                                GizmoMode::Translate => {
+                                    entity.transform.position[0] += dx * 0.01;
+                                    entity.transform.position[1] -= dy * 0.01;
+                                }
+                                GizmoMode::Rotate => {
+                                    entity.transform.rotation[1] += dx * 0.5;
+                                    entity.transform.rotation[0] += dy * 0.5;
+                                }
+                                GizmoMode::Scale => {
+                                    let delta = (dx - dy) * 0.005;
+                                    for value in &mut entity.transform.scale {
+                                        *value = (*value + delta).max(0.05);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.last_cursor = Some((position.x, position.y));
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. } => {
+                self.viewport_drag = state == winit::event::ElementState::Pressed;
+                if self.viewport_drag {
+                    self.last_cursor = None;
+                } else {
+                    self.last_cursor = None;
+                }
+            }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = self.renderer.as_mut() {
@@ -229,6 +288,16 @@ impl ApplicationHandler for Editor {
                 };
                 let aspect = width as f32 / height.max(1) as f32;
                 let view_proj = self.camera.view_projection(aspect);
+                let model = if let Some(entity) = self.scene.entities.get(self.selected) {
+                    let t = &entity.transform;
+                    Mat4::from_scale_rotation_translation(
+                        Vec3::from_array(t.scale),
+                        glam::Quat::from_euler(glam::EulerRot::XYZ, t.rotation[0].to_radians(), t.rotation[1].to_radians(), t.rotation[2].to_radians()),
+                        Vec3::from_array(t.position),
+                    )
+                } else {
+                    Mat4::IDENTITY
+                };
 
                 let frame = match self.renderer.as_ref().unwrap().surface.get_current_texture() {
                     Ok(frame) => frame,
@@ -245,7 +314,7 @@ impl ApplicationHandler for Editor {
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj);
+                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj, model);
                 let device = self.renderer.as_ref().unwrap().device.clone();
                 let queue = self.renderer.as_ref().unwrap().queue.clone();
                 self.render_ui(&window, &device, &queue, &view, &mut encoder);
