@@ -44,6 +44,7 @@ pub const CUBE_INDICES: &[u16] = &[
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct CameraUniform {
     view_proj: [[f32; 4]; 4],
+    model: [[f32; 4]; 4],
 }
 
 pub struct Renderer<'window> {
@@ -210,8 +211,12 @@ impl<'window> Renderer<'window> {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         view_proj: Mat4,
+        model: Mat4,
     ) {
-        let uniform = CameraUniform { view_proj: view_proj.to_cols_array_2d() };
+        let uniform = CameraUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+            model: model.to_cols_array_2d(),
+        };
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -252,7 +257,7 @@ impl<'window> Renderer<'window> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("vertex-render-encoder"),
         });
-        self.render_to_view(&mut encoder, &view, view_proj);
+        self.render_to_view(&mut encoder, &view, view_proj, Mat4::IDENTITY);
         self.queue.submit(Some(encoder.finish()));
         frame.present();
         Ok(())
