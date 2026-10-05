@@ -1,4 +1,6 @@
-//! Camera primitives shared by the editor and runtime.
+//! Perspective camera with view and projection matrices.
+
+use glam::{Mat4, Vec3};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
@@ -30,5 +32,28 @@ impl Camera {
         for (p, d) in self.position.iter_mut().zip(delta) {
             *p += d;
         }
+    }
+
+    pub fn view_matrix(&self) -> Mat4 {
+        let position = Vec3::from_array(self.position);
+        let direction = Vec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.pitch.sin(),
+            -self.yaw.cos() * self.pitch.cos(),
+        ).normalize();
+        Mat4::look_to_rh(position, direction, Vec3::Y)
+    }
+
+    pub fn projection_matrix(&self, aspect: f32) -> Mat4 {
+        Mat4::perspective_rh(
+            self.fov_y_radians,
+            aspect.max(0.01),
+            self.near,
+            self.far,
+        )
+    }
+
+    pub fn view_projection(&self, aspect: f32) -> Mat4 {
+        self.projection_matrix(aspect) * self.view_matrix()
     }
 }
