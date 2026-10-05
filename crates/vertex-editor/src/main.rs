@@ -107,13 +107,22 @@ impl Editor {
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let Some(state) = self.egui_state.as_mut() else { return };
-        let raw_input = state.take_egui_input(window);
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            self.draw_ui();
-            let _ = ctx;
-        });
-        state.handle_platform_output(window, full_output.platform_output);
+        let raw_input = match self.egui_state.as_mut() {
+            Some(state) => state.take_egui_input(window),
+            None => return,
+        };
+
+        // Do not keep an egui_winit mutable borrow while building the UI.
+        let full_output = {
+            let ctx = self.egui_ctx.clone();
+            ctx.run(raw_input, |_ctx| {
+                self.draw_ui();
+            })
+        };
+
+        if let Some(state) = self.egui_state.as_mut() {
+            state.handle_platform_output(window, full_output.platform_output);
+        }
 
         let clipped = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen = egui_wgpu::ScreenDescriptor {
@@ -127,25 +136,23 @@ impl Editor {
         }
         renderer.update_buffers(device, queue, encoder, &clipped, &screen);
 
-        {
-            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("vertex-editor-ui"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            let mut pass = pass.forget_lifetime();
-            renderer.render(&mut pass, &clipped, &screen);
-        }
+        let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("vertex-editor-ui"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        let mut pass = pass.forget_lifetime();
+        renderer.render(&mut pass, &clipped, &screen);
 
         for id in &full_output.textures_delta.free {
             renderer.free_texture(id);
