@@ -50,6 +50,7 @@ struct CameraUniform {
     albedo: [f32; 4],
     light_direction: [f32; 4],
     light_color_intensity: [f32; 4],
+    pbr: [f32; 4],
 }
 
 pub struct Renderer<'window> {
@@ -64,6 +65,7 @@ pub struct Renderer<'window> {
     num_indices: u32,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
 }
@@ -223,7 +225,7 @@ impl<'window> Renderer<'window> {
         Ok(Self {
             instance, surface, device, queue, config, pipeline,
             vertex_buffer, index_buffer, num_indices: CUBE_INDICES.len() as u32,
-            camera_buffer, camera_bind_group, texture_bind_group, depth_view,
+            camera_buffer, camera_bind_group, texture_layout, texture_bind_group, depth_view,
         })
     }
 
@@ -237,6 +239,45 @@ impl<'window> Renderer<'window> {
             view_formats: &[],
         });
         texture.create_view(&wgpu::TextureViewDescriptor::default())
+    }
+
+    /// Decode a PNG/JPEG from disk and upload it to the GPU.
+    /// The returned bind group can be retained by the editor and reused per draw.
+    pub fn load_texture(&self, path: &std::path::Path) -> Result<wgpu::BindGroup, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("failed to read texture {}: {e}", path.display()))?;
+        let decoded = image::load_from_memory(&bytes)
+            .map_err(|e| format!("failed to decode texture {}: {e}", path.display()))?
+            .to_rgba8();
+        let (width, height) = decoded.dimensions();
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("vertex-material-texture"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            &decoded,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        Ok(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("loaded-material-texture"),
+            layout: &self.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        }))
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -256,6 +297,9 @@ impl<'window> Renderer<'window> {
         light_direction: [f32; 3],
         light_color: [f32; 3],
         light_intensity: f32,
+        metallic: f32,
+        roughness: f32,
+        texture_bind_group: Option<&wgpu::BindGroup>,
     ) {
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -263,6 +307,7 @@ impl<'window> Renderer<'window> {
             albedo,
             light_direction: [light_direction[0], light_direction[1], light_direction[2], 0.0],
             light_color_intensity: [light_color[0], light_color[1], light_color[2], light_intensity],
+            pbr: [metallic, roughness, 0.0, 0.0],
         };
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
@@ -293,7 +338,7 @@ impl<'window> Renderer<'window> {
 
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        pass.set_bind_group(1, &self.texture_bind_group, &[]);
+        pass.set_bind_group(1, texture_bind_group.unwrap_or(&self.texture_bind_group), &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..self.num_indices, 0, 0..1);
