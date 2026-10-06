@@ -9,3 +9,5 @@ wgpu = "27"
 winit = "0.30"
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.30"
+
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
