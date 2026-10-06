@@ -588,7 +588,10 @@ impl ApplicationHandler for Editor {
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj, model);
+                let (albedo, light_direction, light_color, light_intensity) = self.scene.entities.get(self.selected)
+                    .map(|e| (e.material.albedo, self.scene.light.direction, self.scene.light.color, self.scene.light.intensity))
+                    .unwrap_or(([0.8,0.8,0.85,1.0], self.scene.light.direction, self.scene.light.color, self.scene.light.intensity));
+                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj, model, albedo, light_direction, light_color, light_intensity);
                 let device = self.renderer.as_ref().unwrap().device.clone();
                 let queue = self.renderer.as_ref().unwrap().queue.clone();
                 self.render_ui(&window, &device, &queue, &view, &mut encoder);
