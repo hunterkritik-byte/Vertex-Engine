@@ -551,24 +551,24 @@ impl ApplicationHandler for Editor {
                 window.request_redraw();
             }
             WindowEvent::DroppedFile(path) => {
-                if let Some(renderer) = self.renderer.as_ref() {
-                    let supported = path.extension().and_then(|e| e.to_str())
-                        .map(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"))
-                        .unwrap_or(false);
-                    if supported {
-                        match renderer.load_texture(&path) {
-                            Ok(bind_group) => {
-                                self.texture_cache.insert(path.clone(), bind_group);
-                                if let Some(entity) = self.scene.entities.get_mut(self.selected) {
-                                    self.snapshot();
-                                    entity.material.texture_path = Some(path.to_string_lossy().into_owned());
-                                }
-                            }
-                            Err(error) => eprintln!("Texture import failed: {error}"),
+                let supported = path.extension().and_then(|e| e.to_str())
+                    .map(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"))
+                    .unwrap_or(false);
+                if supported {
+                    let imported = self.renderer.as_ref().and_then(|renderer| {
+                        renderer.load_texture(&path).map_err(|error| {
+                            eprintln!("Texture import failed: {error}");
+                        }).ok()
+                    });
+                    if let Some(bind_group) = imported {
+                        self.texture_cache.insert(path.clone(), bind_group);
+                        self.snapshot();
+                        if let Some(entity) = self.scene.entities.get_mut(self.selected) {
+                            entity.material.texture_path = Some(path.to_string_lossy().into_owned());
                         }
-                    } else {
-                        eprintln!("Unsupported dropped asset: {}", path.display());
                     }
+                } else {
+                    eprintln!("Unsupported dropped asset: {}", path.display());
                 }
                 window.request_redraw();
             }
