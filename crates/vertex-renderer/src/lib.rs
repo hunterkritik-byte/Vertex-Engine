@@ -350,7 +350,7 @@ impl<'window> Renderer<'window> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("vertex-render-encoder"),
         });
-        self.render_to_view(&mut encoder, &view, view_proj, Mat4::IDENTITY, [0.8,0.8,0.85,1.0], [-0.4,-1.0,-0.5], [1.0,0.95,0.9], 2.0);
+        self.render_to_view(&mut encoder, &view, view_proj, Mat4::IDENTITY, [0.8,0.8,0.85,1.0], [-0.4,-1.0,-0.5], [1.0,0.95,0.9], 2.0, 0.0, 0.5, None);
         self.queue.submit(Some(encoder.finish()));
         frame.present();
         Ok(())
