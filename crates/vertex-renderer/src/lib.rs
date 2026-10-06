@@ -10,11 +10,12 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub color: [f32; 3],
     pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
-    pub const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
+    pub const ATTRIBS: [wgpu::VertexAttribute; 4] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2];
 
     pub fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
@@ -26,14 +27,14 @@ impl Vertex {
 }
 
 pub const CUBE_VERTICES: &[Vertex] = &[
-    Vertex { position: [-1.0,-1.0, 1.0], color: [1.0,0.0,0.0] , normal: [-1,-1,1] },
-    Vertex { position: [ 1.0,-1.0, 1.0], color: [0.0,1.0,0.0] , normal: [1,-1,1] },
-    Vertex { position: [ 1.0, 1.0, 1.0], color: [0.0,0.0,1.0] , normal: [1,1,1] },
-    Vertex { position: [-1.0, 1.0, 1.0], color: [1.0,1.0,0.0] , normal: [-1,1,1] },
-    Vertex { position: [-1.0,-1.0,-1.0], color: [1.0,0.0,1.0] , normal: [-1,-1,-1] },
-    Vertex { position: [ 1.0,-1.0,-1.0], color: [0.0,1.0,1.0] , normal: [1,-1,-1] },
-    Vertex { position: [ 1.0, 1.0,-1.0], color: [1.0,1.0,1.0] , normal: [1,1,-1] },
-    Vertex { position: [-1.0, 1.0,-1.0], color: [0.2,0.2,0.2] , normal: [-1,1,-1] },
+    Vertex { position: [-1.0,-1.0, 1.0], color: [1.0,0.0,0.0] , normal: [-1.0,-1.0,1.0], uv: [0.0,1.0] },
+    Vertex { position: [ 1.0,-1.0, 1.0], color: [0.0,1.0,0.0] , normal: [1.0,-1.0,1.0], uv: [1.0,1.0] },
+    Vertex { position: [ 1.0, 1.0, 1.0], color: [0.0,0.0,1.0] , normal: [1.0,1.0,1.0], uv: [1.0,0.0] },
+    Vertex { position: [-1.0, 1.0, 1.0], color: [1.0,1.0,0.0] , normal: [-1.0,1.0,1.0], uv: [0.0,0.0] },
+    Vertex { position: [-1.0,-1.0,-1.0], color: [1.0,0.0,1.0] , normal: [-1.0,-1.0,-1.0], uv: [1.0,1.0] },
+    Vertex { position: [ 1.0,-1.0,-1.0], color: [0.0,1.0,1.0] , normal: [1.0,-1.0,-1.0], uv: [0.0,1.0] },
+    Vertex { position: [ 1.0, 1.0,-1.0], color: [1.0,1.0,1.0] , normal: [1.0,1.0,-1.0], uv: [0.0,0.0] },
+    Vertex { position: [-1.0, 1.0,-1.0], color: [0.2,0.2,0.2] , normal: [-1.0,1.0,-1.0], uv: [1.0,0.0] },
 ];
 
 pub const CUBE_INDICES: &[u16] = &[
