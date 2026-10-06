@@ -168,13 +168,28 @@ impl Editor {
             }
         }
 
-        for node in document.nodes() {
-            if let Some(parent_node) = node.parent() {
-                if let (Some(child), Some(parent)) = (node_entities[node.index()], node_entities[parent_node.index()]) {
-                    if let Some(entity) = self.scene.entities.get_mut(child) {
-                        entity.parent = Some(parent);
-                    }
+        // glTF 1.4.1 does not expose Node::parent(); preserve hierarchy by
+        // walking each scene's children recursively from the scene roots.
+        fn link_children(
+            node: gltf::Node<'_>,
+            parent_entity: Option<usize>,
+            node_entities: &[Option<usize>],
+            entities: &mut [vertex_core::scene::Entity],
+        ) {
+            let entity = node_entities.get(node.index()).copied().flatten();
+            if let (Some(child), Some(parent)) = (entity, parent_entity) {
+                if let Some(item) = entities.get_mut(child) {
+                    item.parent = Some(parent);
                 }
+            }
+            for child_node in node.children() {
+                link_children(child_node, entity.or(parent_entity), node_entities, entities);
+            }
+        }
+
+        for scene in document.scenes() {
+            for root in scene.nodes() {
+                link_children(root, None, &node_entities, &mut self.scene.entities);
             }
         }
 
