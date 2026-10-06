@@ -1,6 +1,7 @@
 //! Minimal scene representation.
 
 use serde::{Deserialize, Serialize};
+use crate::material::{DirectionalLight, Material};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
@@ -22,12 +23,14 @@ impl Default for Transform {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scene {
     pub entities: Vec<Entity>,
+    pub light: DirectionalLight,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub name: String,
     pub transform: Transform,
+    pub material: Material,
 }
 
 impl Entity {
@@ -35,6 +38,7 @@ impl Entity {
         Self {
             name: name.into(),
             transform: Transform::default(),
+            material: Material::default(),
         }
     }
 }
