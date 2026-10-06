@@ -4,7 +4,7 @@ use glam::{Mat4, Vec3, Vec4};
 
 use egui::ViewportId;
 use egui_wgpu::wgpu;
-use vertex_core::{camera::Camera, scene::Scene, Engine};
+use vertex_core::{asset::scan_assets, camera::Camera, scene::Scene, Engine};
 use vertex_renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
@@ -36,6 +36,7 @@ struct Editor {
     mouse_press: Option<(f64, f64)>,
     gizmo_axis: Option<usize>,
     gizmo_drag_start: Option<(f64, f64)>,
+    asset_root: PathBuf,
 }
 
 impl Default for Editor {
@@ -60,6 +61,7 @@ impl Default for Editor {
             mouse_press: None,
             gizmo_axis: None,
             gizmo_drag_start: None,
+            asset_root: PathBuf::from("assets"),
         }
     }
 }
@@ -268,6 +270,21 @@ impl Editor {
             self.selected = index;
         }
 
+        egui::SidePanel::left("assets").resizable(true).default_width(220.0).show(&self.egui_ctx, |ui| {
+            ui.heading("📁 Assets");
+            ui.separator();
+            let assets = scan_assets(&self.asset_root);
+            if assets.is_empty() {
+                ui.label("No assets found.");
+                ui.small(format!("Create {:?}", self.asset_root));
+            } else {
+                for asset in assets {
+                    let icon = if asset.is_directory { "📂" } else { "🧩" };
+                    ui.label(format!("{icon} {}", asset.path.display()));
+                }
+            }
+        });
+
         egui::SidePanel::right("inspector").default_width(280.0).show(&self.egui_ctx, |ui| {
             ui.heading("Inspector");
             ui.separator();
@@ -290,6 +307,17 @@ impl Editor {
                             }
                         });
                     }
+                });
+                ui.collapsing("Material", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Albedo");
+                        for value in &mut entity.material.albedo[..3] {
+                            ui.add(egui::DragValue::new(value).range(0.0..=1.0).speed(0.01));
+                        }
+                    });
+                    ui.add(egui::Slider::new(&mut entity.material.metallic, 0.0..=1.0).text("Metallic"));
+                    ui.add(egui::Slider::new(&mut entity.material.roughness, 0.04..=1.0).text("Roughness"));
+                    ui.label(if entity.material.texture_id.is_some() { "Texture: assigned" } else { "Texture: none" });
                 });
             }
         });
