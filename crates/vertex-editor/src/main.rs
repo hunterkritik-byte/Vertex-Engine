@@ -183,17 +183,17 @@ impl Editor {
             (egui::vec2(0.0, -75.0), egui::Color32::GREEN, "Y"),
             (egui::vec2(-53.0, 53.0), egui::Color32::BLUE, "Z"),
         ];
-        painter.circle_stroke(center, 9.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+        painter.circle_stroke(center, 9.0, egui::Stroke::new(2.0_f32, egui::Color32::WHITE));
         for (i, (offset, color, label)) in axes.into_iter().enumerate() {
             let color = if self.gizmo_axis == Some(i) { egui::Color32::YELLOW } else { color };
             let end = center + offset;
-            painter.line_segment([center, end], egui::Stroke::new(4.0, color));
+            painter.line_segment([center, end], egui::Stroke::new(4.0_f32, color));
             painter.circle_filled(end, 8.0, color);
             painter.text(end, egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(13.0), egui::Color32::WHITE);
         }
         painter.rect_stroke(
             egui::Rect::from_center_size(center, egui::vec2(150.0, 150.0)),
-            2.0, egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(255, 255, 0, 110)),
+            2.0, egui::Stroke::new(1.5_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 0, 110)),
             egui::StrokeKind::Outside,
         );
     }
@@ -612,7 +612,7 @@ impl ApplicationHandler for Editor {
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let material = self.scene.entities.get(self.selected).map(|e| e.material).unwrap_or_default();
+                let material = self.scene.entities.get(self.selected).map(|e| e.material.clone()).unwrap_or_default();
                 let texture_bind_group = material.texture_path.as_ref()
                     .and_then(|path| self.texture_cache.get(Path::new(path)));
                 self.renderer.as_ref().unwrap().render_to_view(
