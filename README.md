@@ -1,5 +1,7 @@
 # Vertex Engine
 
+
+**Sponsorship & Collaboration:** hunterkritik@gmail.com
 > A Rust-first, open-source 2D & 3D game engine aiming for a modern Unity/Unreal-style workflow. 🦀🎮
 
 Vertex Engine is an experimental game engine built from the ground up with Rust, wgpu, and an editor UI.
