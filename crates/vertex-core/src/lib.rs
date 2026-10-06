@@ -1,6 +1,8 @@
 //! Core types and engine lifecycle for Vertex Engine.
 
+pub mod asset;
 pub mod camera;
+pub mod material;
 pub mod mesh;
 pub mod scene;
 
