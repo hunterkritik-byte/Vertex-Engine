@@ -16,3 +16,5 @@ wgpu = "27"
 egui = "0.33"
 egui-wgpu = "0.33"
 egui-winit = "0.33"
+gltf = { version = "1", features = ["import"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
