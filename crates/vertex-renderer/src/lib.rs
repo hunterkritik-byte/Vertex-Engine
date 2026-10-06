@@ -9,11 +9,12 @@ use wgpu::util::DeviceExt;
 pub struct Vertex {
     pub position: [f32; 3],
     pub color: [f32; 3],
+    pub normal: [f32; 3],
 }
 
 impl Vertex {
     pub const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
 
     pub fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
@@ -25,14 +26,14 @@ impl Vertex {
 }
 
 pub const CUBE_VERTICES: &[Vertex] = &[
-    Vertex { position: [-1.0,-1.0, 1.0], color: [1.0,0.0,0.0] },
-    Vertex { position: [ 1.0,-1.0, 1.0], color: [0.0,1.0,0.0] },
-    Vertex { position: [ 1.0, 1.0, 1.0], color: [0.0,0.0,1.0] },
-    Vertex { position: [-1.0, 1.0, 1.0], color: [1.0,1.0,0.0] },
-    Vertex { position: [-1.0,-1.0,-1.0], color: [1.0,0.0,1.0] },
-    Vertex { position: [ 1.0,-1.0,-1.0], color: [0.0,1.0,1.0] },
-    Vertex { position: [ 1.0, 1.0,-1.0], color: [1.0,1.0,1.0] },
-    Vertex { position: [-1.0, 1.0,-1.0], color: [0.2,0.2,0.2] },
+    Vertex { position: [-1.0,-1.0, 1.0], color: [1.0,0.0,0.0] , normal: [-1,-1,1] },
+    Vertex { position: [ 1.0,-1.0, 1.0], color: [0.0,1.0,0.0] , normal: [1,-1,1] },
+    Vertex { position: [ 1.0, 1.0, 1.0], color: [0.0,0.0,1.0] , normal: [1,1,1] },
+    Vertex { position: [-1.0, 1.0, 1.0], color: [1.0,1.0,0.0] , normal: [-1,1,1] },
+    Vertex { position: [-1.0,-1.0,-1.0], color: [1.0,0.0,1.0] , normal: [-1,-1,-1] },
+    Vertex { position: [ 1.0,-1.0,-1.0], color: [0.0,1.0,1.0] , normal: [1,-1,-1] },
+    Vertex { position: [ 1.0, 1.0,-1.0], color: [1.0,1.0,1.0] , normal: [1,1,-1] },
+    Vertex { position: [-1.0, 1.0,-1.0], color: [0.2,0.2,0.2] , normal: [-1,1,-1] },
 ];
 
 pub const CUBE_INDICES: &[u16] = &[
@@ -45,6 +46,9 @@ pub const CUBE_INDICES: &[u16] = &[
 struct CameraUniform {
     view_proj: [[f32; 4]; 4],
     model: [[f32; 4]; 4],
+    albedo: [f32; 4],
+    light_direction: [f32; 4],
+    light_color_intensity: [f32; 4],
 }
 
 pub struct Renderer<'window> {
@@ -212,10 +216,17 @@ impl<'window> Renderer<'window> {
         view: &wgpu::TextureView,
         view_proj: Mat4,
         model: Mat4,
+        albedo: [f32; 4],
+        light_direction: [f32; 3],
+        light_color: [f32; 3],
+        light_intensity: f32,
     ) {
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
             model: model.to_cols_array_2d(),
+            albedo,
+            light_direction: [light_direction[0], light_direction[1], light_direction[2], 0.0],
+            light_color_intensity: [light_color[0], light_color[1], light_color[2], light_intensity],
         };
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
@@ -257,7 +268,7 @@ impl<'window> Renderer<'window> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("vertex-render-encoder"),
         });
-        self.render_to_view(&mut encoder, &view, view_proj, Mat4::IDENTITY);
+        self.render_to_view(&mut encoder, &view, view_proj, Mat4::IDENTITY, [0.8,0.8,0.85,1.0], [-0.4,-1.0,-0.5], [1.0,0.95,0.9], 2.0);
         self.queue.submit(Some(encoder.finish()));
         frame.present();
         Ok(())
