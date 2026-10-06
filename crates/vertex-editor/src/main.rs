@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}, sync::Arc};
 
 use glam::{Mat4, Vec3, Vec4};
 
@@ -37,6 +37,7 @@ struct Editor {
     gizmo_axis: Option<usize>,
     gizmo_drag_start: Option<(f64, f64)>,
     asset_root: PathBuf,
+    texture_cache: HashMap<PathBuf, wgpu::BindGroup>,
 }
 
 impl Default for Editor {
@@ -62,6 +63,7 @@ impl Default for Editor {
             gizmo_axis: None,
             gizmo_drag_start: None,
             asset_root: PathBuf::from("assets"),
+            texture_cache: HashMap::new(),
         }
     }
 }
@@ -548,6 +550,28 @@ impl ApplicationHandler for Editor {
                 self.camera.position[2] = (self.camera.position[2] - amount).clamp(1.0, 100.0);
                 window.request_redraw();
             }
+            WindowEvent::DroppedFile(path) => {
+                if let Some(renderer) = self.renderer.as_ref() {
+                    let supported = path.extension().and_then(|e| e.to_str())
+                        .map(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"))
+                        .unwrap_or(false);
+                    if supported {
+                        match renderer.load_texture(&path) {
+                            Ok(bind_group) => {
+                                self.texture_cache.insert(path.clone(), bind_group);
+                                if let Some(entity) = self.scene.entities.get_mut(self.selected) {
+                                    self.snapshot();
+                                    entity.material.texture_path = Some(path.to_string_lossy().into_owned());
+                                }
+                            }
+                            Err(error) => eprintln!("Texture import failed: {error}"),
+                        }
+                    } else {
+                        eprintln!("Unsupported dropped asset: {}", path.display());
+                    }
+                }
+                window.request_redraw();
+            }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = self.renderer.as_mut() {
@@ -588,10 +612,19 @@ impl ApplicationHandler for Editor {
                     &wgpu::CommandEncoderDescriptor { label: Some("vertex-frame") }
                 );
                 let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let (albedo, light_direction, light_color, light_intensity) = self.scene.entities.get(self.selected)
-                    .map(|e| (e.material.albedo, self.scene.light.direction, self.scene.light.color, self.scene.light.intensity))
-                    .unwrap_or(([0.8,0.8,0.85,1.0], self.scene.light.direction, self.scene.light.color, self.scene.light.intensity));
-                self.renderer.as_ref().unwrap().render_to_view(&mut encoder, &view, view_proj, model, albedo, light_direction, light_color, light_intensity);
+                let material = self.scene.entities.get(self.selected).map(|e| e.material).unwrap_or_default();
+                let texture_bind_group = material.texture_path.as_ref()
+                    .and_then(|path| self.texture_cache.get(Path::new(path)));
+                self.renderer.as_ref().unwrap().render_to_view(
+                    &mut encoder, &view, view_proj, model,
+                    material.albedo,
+                    self.scene.light.direction,
+                    self.scene.light.color,
+                    self.scene.light.intensity,
+                    material.metallic,
+                    material.roughness,
+                    texture_bind_group,
+                );
                 let device = self.renderer.as_ref().unwrap().device.clone();
                 let queue = self.renderer.as_ref().unwrap().queue.clone();
                 self.render_ui(&window, &device, &queue, &view, &mut encoder);
