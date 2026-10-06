@@ -41,7 +41,7 @@ struct Editor {
     texture_cache: HashMap<PathBuf, wgpu::BindGroup>,
     asset_mtimes: HashMap<PathBuf, std::time::SystemTime>,
     thumbnail_cache: HashMap<PathBuf, egui::TextureHandle>,
-    mesh_cache: HashMap<(PathBuf, usize), u64>,
+    mesh_cache: HashMap<(PathBuf, usize, usize), u64>,
 }
 
 impl Default for Editor {
@@ -98,6 +98,9 @@ impl Editor {
     }
 
     fn import_gltf(&mut self, path: &Path) {
+        let source = path.to_string_lossy().into_owned();
+        self.scene.entities.retain(|e| e.asset_path.as_deref() != Some(&source));
+        self.mesh_cache.retain(|(p, _, _), _| p != path);
         let imported = match gltf::import(path) {
             Ok(value) => value,
             Err(error) => {
@@ -137,11 +140,15 @@ impl Editor {
         let base_parent = None;
         let mut node_entities = vec![None; document.nodes().count()];
         for node in document.nodes() {
-            let entity_id = self.scene.spawn(node.name().unwrap_or("GLTF Node"));
-            node_entities[node.index()] = Some(entity_id);
-            if let Some(entity) = self.scene.entities.get_mut(entity_id) {
+            let count = node.mesh().map(|m| m.primitives().count()).unwrap_or(0).max(1);
+            for primitive_index in 0..count {
+                let name = if count == 1 { node.name().unwrap_or("GLTF Node").to_string() } else { format!("{} [Primitive {}]", node.name().unwrap_or("GLTF Node"), primitive_index) };
+                let entity_id = self.scene.spawn(name);
+                if node_entities[node.index()].is_none() { node_entities[node.index()] = Some(entity_id); }
+                if let Some(entity) = self.scene.entities.get_mut(entity_id) {
                 entity.asset_path = Some(asset_path.clone());
                 entity.asset_node = Some(node.index());
+                entity.asset_primitive = Some(primitive_index);
                 entity.parent = base_parent;
                 {
                     let (translation, rotation, scale) = node.transform().decomposed();
@@ -152,7 +159,7 @@ impl Editor {
                     entity.transform.rotation = [x.to_degrees(), y.to_degrees(), z.to_degrees()];
                 }
                 if let Some(mesh) = node.mesh() {
-                    if let Some(primitive) = mesh.primitives().next() {
+                    if let Some(primitive) = mesh.primitives().nth(primitive_index) {
                         let reader = primitive.reader(|buffer| Some(&_buffers[buffer.index()]));
                         let positions: Vec<[f32; 3]> = reader.read_positions().map(|v| v.collect()).unwrap_or_default();
                         let normals: Vec<[f32; 3]> = reader.read_normals().map(|v| v.collect()).unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
@@ -166,7 +173,7 @@ impl Editor {
                         }).collect();
                         if let Some(renderer) = self.renderer.as_mut() {
                             match renderer.upload_mesh(&vertices, &indices) {
-                                Ok(handle) => { self.mesh_cache.insert((path.to_path_buf(), node.index()), handle); }
+                                Ok(handle) => { self.mesh_cache.insert((path.to_path_buf(), node.index(), primitive_index), handle); }
                                 Err(error) => eprintln!("GPU mesh upload failed: {error}"),
                             }
                         }
@@ -404,20 +411,29 @@ impl Editor {
             self.selected = index;
         }
 
-        egui::SidePanel::left("assets").resizable(true).default_width(220.0).show(&self.egui_ctx, |ui| {
-            ui.heading("📁 Assets");
+        let mut asset_action = None;
+        egui::SidePanel::left("assets").resizable(true).default_width(240.0).show(&self.egui_ctx, |ui| {
+            ui.heading("📦 Asset Browser 2.0");
+            ui.small("Drag 3D assets into the Scene View");
             ui.separator();
-            let assets = scan_assets(&self.asset_root);
-            if assets.is_empty() {
-                ui.label("No assets found.");
-                ui.small(format!("Create {:?}", self.asset_root));
-            } else {
-                for asset in assets {
-                    let icon = if asset.is_directory { "📂" } else { "🧩" };
-                    ui.label(format!("{icon} {}", asset.path.display()));
-                }
+            for asset in scan_assets(&self.asset_root) {
+                if asset.is_directory { ui.label(format!("📂 {}", asset.path.display())); continue; }
+                let ext = asset.path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+                let icon = match ext.as_str() { "glb" | "gltf" => "🧩", "png" | "jpg" | "jpeg" => "🖼️", _ => "📄" };
+                let name = asset.path.file_name().and_then(|n| n.to_str()).unwrap_or("asset");
+                let response = ui.add(egui::Label::new(format!("{icon} {name}")).sense(egui::Sense::drag()));
+                if response.drag_stopped() && matches!(ext.as_str(), "glb" | "gltf") { asset_action = Some(asset.path.clone()); }
+                response.context_menu(|menu| {
+                    if matches!(ext.as_str(), "glb" | "gltf") && menu.button("Re-import").clicked() {
+                        asset_action = Some(asset.path.clone()); menu.close();
+                    }
+                });
             }
         });
+        if let Some(path) = asset_action {
+            self.snapshot();
+            self.import_gltf(&path);
+        }
 
         egui::SidePanel::right("inspector").default_width(280.0).show(&self.egui_ctx, |ui| {
             ui.heading("Inspector");
@@ -753,7 +769,7 @@ impl ApplicationHandler for Editor {
                     .and_then(|path| self.texture_cache.get(Path::new(path)));
                 if let Some(entity) = self.scene.entities.get(self.selected) {
                     if let (Some(asset_path), Some(asset_node)) = (&entity.asset_path, entity.asset_node) {
-                        if let Some(&mesh_id) = self.mesh_cache.get(&(PathBuf::from(asset_path), asset_node)) {
+                        if let Some(&mesh_id) = self.mesh_cache.get(&(PathBuf::from(asset_path), asset_node, entity.asset_primitive.unwrap_or(0))) {
                             self.renderer.as_ref().unwrap().render_mesh_to_view(
                                 &mut encoder, &view, view_proj, model,
                                 material.albedo, self.scene.light.direction, self.scene.light.color,
