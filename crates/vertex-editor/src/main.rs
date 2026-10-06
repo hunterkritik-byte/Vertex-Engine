@@ -193,6 +193,7 @@ impl Editor {
                 }
             }
         }
+        }
 
         // glTF 1.4.1 does not expose Node::parent(); preserve hierarchy by
         // walking each scene's children recursively from the scene roots.
