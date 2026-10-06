@@ -2,6 +2,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
+use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -68,6 +69,8 @@ pub struct Renderer<'window> {
     texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
+    meshes: HashMap<u64, (wgpu::Buffer, wgpu::Buffer, u32)>,
+    next_mesh_id: u64,
 }
 
 impl<'window> Renderer<'window> {
@@ -226,6 +229,7 @@ impl<'window> Renderer<'window> {
             instance, surface, device, queue, config, pipeline,
             vertex_buffer, index_buffer, num_indices: CUBE_INDICES.len() as u32,
             camera_buffer, camera_bind_group, texture_layout, texture_bind_group, depth_view,
+            meshes: HashMap::new(), next_mesh_id: 1,
         })
     }
 
@@ -285,6 +289,77 @@ impl<'window> Renderer<'window> {
         self.config.height = height.max(1);
         self.surface.configure(&self.device, &self.config);
         self.depth_view = Self::create_depth_view(&self.device, &self.config);
+    }
+
+    /// Upload a CPU mesh to GPU memory and return a stable renderer-local handle.
+    pub fn upload_mesh(&mut self, vertices: &[Vertex], indices: &[u32]) -> Result<u64, String> {
+        if vertices.is_empty() || indices.is_empty() {
+            return Err("mesh has no vertices or indices".into());
+        }
+        let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("imported-mesh-vertex-buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("imported-mesh-index-buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let id = self.next_mesh_id;
+        self.next_mesh_id = self.next_mesh_id.wrapping_add(1).max(1);
+        self.meshes.insert(id, (vertex_buffer, index_buffer, indices.len() as u32));
+        Ok(id)
+    }
+
+    pub fn render_mesh_to_view(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        view_proj: Mat4,
+        model: Mat4,
+        albedo: [f32; 4],
+        light_direction: [f32; 3],
+        light_color: [f32; 3],
+        light_intensity: f32,
+        metallic: f32,
+        roughness: f32,
+        texture_bind_group: Option<&wgpu::BindGroup>,
+        mesh_id: u64,
+        clear: bool,
+    ) {
+        let Some((vertex_buffer, index_buffer, num_indices)) = self.meshes.get(&mesh_id) else { return };
+        let uniform = CameraUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+            model: model.to_cols_array_2d(),
+            albedo,
+            light_direction: [light_direction[0], light_direction[1], light_direction[2], 0.0],
+            light_color_intensity: [light_color[0], light_color[1], light_color[2], light_intensity],
+            pbr: [metallic, roughness, 0.0, 0.0],
+        };
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("vertex-imported-mesh-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view, depth_slice: None, resolve_target: None,
+                ops: wgpu::Operations {
+                    load: if clear { wgpu::LoadOp::Clear(wgpu::Color { r: 0.03, g: 0.03, b: 0.04, a: 1.0 }) } else { wgpu::LoadOp::Load },
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations { load: if clear { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load }, store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None, timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_bind_group(1, texture_bind_group.unwrap_or(&self.texture_bind_group), &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..*num_indices, 0, 0..1);
     }
 
     pub fn render_to_view(
