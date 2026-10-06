@@ -31,6 +31,15 @@ pub struct Entity {
     pub name: String,
     pub transform: Transform,
     pub material: Material,
+    /// Optional parent entity index used to preserve imported node hierarchy.
+    #[serde(default)]
+    pub parent: Option<usize>,
+    /// Source asset path for imported GLTF/GLB content.
+    #[serde(default)]
+    pub asset_path: Option<String>,
+    /// Primitive/node index inside the source asset.
+    #[serde(default)]
+    pub asset_node: Option<usize>,
 }
 
 impl Entity {
@@ -39,6 +48,9 @@ impl Entity {
             name: name.into(),
             transform: Transform::default(),
             material: Material::default(),
+            parent: None,
+            asset_path: None,
+            asset_node: None,
         }
     }
 }
