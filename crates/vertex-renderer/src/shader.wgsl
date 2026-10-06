@@ -4,6 +4,7 @@ struct Camera {
     albedo: vec4<f32>,
     light_direction: vec4<f32>,
     light_color_intensity: vec4<f32>,
+    pbr: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -41,10 +42,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let n = normalize(input.normal);
     let l = normalize(-camera.light_direction.xyz);
     let diffuse = max(dot(n, l), 0.0);
+    let metallic = clamp(camera.pbr.x, 0.0, 1.0);
+    let roughness = clamp(camera.pbr.y, 0.04, 1.0);
     let ambient = 0.18;
-    let lit = ambient + diffuse * camera.light_color_intensity.w;
     let light_color = camera.light_color_intensity.xyz;
     let texture_color = textureSample(material_texture, material_sampler, input.uv).rgb;
     let base = input.color * camera.albedo.rgb * texture_color;
+    let specular = pow(max(dot(reflect(-l, n), normalize(-vec3<f32>(0.0, 0.0, 1.0))), 0.0), mix(64.0, 4.0, roughness));
+    let diffuse_term = diffuse * (1.0 - metallic);
+    let lit = ambient + diffuse_term * camera.light_color_intensity.w + specular * camera.light_color_intensity.w * (0.04 + 0.96 * metallic);
     return vec4<f32>(base * (ambient + light_color * lit), camera.albedo.a);
 }
