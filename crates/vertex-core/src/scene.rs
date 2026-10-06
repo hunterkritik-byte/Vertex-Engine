@@ -40,6 +40,9 @@ pub struct Entity {
     /// Primitive/node index inside the source asset.
     #[serde(default)]
     pub asset_node: Option<usize>,
+    /// Primitive index inside the source mesh.
+    #[serde(default)]
+    pub asset_primitive: Option<usize>,
 }
 
 impl Entity {
@@ -51,6 +54,7 @@ impl Entity {
             parent: None,
             asset_path: None,
             asset_node: None,
+            asset_primitive: None,
         }
     }
 }
