@@ -141,8 +141,8 @@ impl Editor {
                 entity.asset_path = Some(asset_path.clone());
                 entity.asset_node = Some(node.index());
                 entity.parent = base_parent;
-                if let Some(transform) = node.transform().decomposed().into() {
-                    let (translation, rotation, scale) = transform;
+                {
+                    let (translation, rotation, scale) = node.transform().decomposed();
                     entity.transform.position = translation;
                     entity.transform.scale = scale;
                     let q = glam::Quat::from_array([rotation[0], rotation[1], rotation[2], rotation[3]]);
