@@ -22,7 +22,13 @@ Vertex Engine is an experimental game engine built from the ground up with Rust,
 - ✅ Undo/Redo scene snapshots
 - 🚧 Interactive XYZ gizmo dragging
 - 🚧 Selected-object outline/highlight
-- 🚧 Asset pipeline
+- ✅ GLB/GLTF asset browser and import pipeline
+- ✅ GLTF multi-primitive mesh import
+- ✅ GPU vertex/index buffer upload for imported meshes
+- ✅ PBR material factor import (albedo/metallic/roughness)
+- ✅ Imported texture path references
+- ✅ Stable asset + node + primitive references in .vertexscene
+- 🚧 Asset thumbnails and filesystem auto re-import
 - 🚧 Physics, animation and audio
 - 🚧 Scripting and game export
 
@@ -61,6 +67,9 @@ flowchart LR
     WGPU["🔥 wgpu / GPU"]
     Shader["🎨 Shaders"]
     Mesh["🔺 Meshes"]
+    Assets["📦 Asset Browser"]
+    GLTF["🧩 GLB / GLTF Import"]
+    PBR["🎨 PBR Materials"]
     Depth["🟦 Depth Buffer"]
     SceneFile["💾 .vertexscene"]
     
@@ -79,8 +88,27 @@ flowchart LR
     Renderer --> WGPU
     Renderer --> Shader
     Renderer --> Mesh
+    Assets --> GLTF
+    GLTF --> Mesh
+    GLTF --> PBR
     Renderer --> Depth
     Scene <--> SceneFile
+```
+
+### 📦 Asset Pipeline
+
+Vertex Engine can now import GLB/GLTF content into the editor, preserve node/primitive references, upload primitive geometry into GPU vertex/index buffers, and map core PBR material factors.
+
+```text
+GLB / GLTF
+    ↓
+Nodes + Primitives
+    ↓
+Vertices + Indices + Materials
+    ↓
+GPU Buffers (wgpu)
+    ↓
+Scene View
 ```
 
 ### 🖱️ Diagram Options
@@ -133,7 +161,13 @@ cargo test --workspace
 - [ ] Selection outline
 
 ### Future
-- [ ] Asset browser/importer
+- [x] Asset browser/importer
+- [x] GLB/GLTF multi-primitive import
+- [x] GPU mesh upload
+- [x] PBR material mapping
+- [x] Stable imported asset references
+- [ ] Asset thumbnails
+- [ ] Automatic file-change re-import
 - [ ] Materials and textures
 - [ ] Lighting and shadows
 - [ ] Physics
