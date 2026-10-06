@@ -6,6 +6,7 @@ use egui::ViewportId;
 use egui_wgpu::wgpu;
 use vertex_core::{asset::scan_assets, camera::Camera, scene::Scene, Engine};
 use vertex_renderer::Renderer;
+use gltf::image::Format as GltfImageFormat;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
@@ -38,6 +39,8 @@ struct Editor {
     gizmo_drag_start: Option<(f64, f64)>,
     asset_root: PathBuf,
     texture_cache: HashMap<PathBuf, wgpu::BindGroup>,
+    asset_mtimes: HashMap<PathBuf, std::time::SystemTime>,
+    thumbnail_cache: HashMap<PathBuf, egui::TextureHandle>,
 }
 
 impl Default for Editor {
@@ -64,6 +67,8 @@ impl Default for Editor {
             gizmo_drag_start: None,
             asset_root: PathBuf::from("assets"),
             texture_cache: HashMap::new(),
+            asset_mtimes: HashMap::new(),
+            thumbnail_cache: HashMap::new(),
         }
     }
 }
@@ -88,6 +93,99 @@ impl Editor {
             self.history.push(self.scene.clone());
             self.scene = scene;
         }
+    }
+
+    fn import_gltf(&mut self, path: &Path) {
+        let imported = match gltf::import(path) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("GLTF import failed for {}: {error}", path.display());
+                return;
+            }
+        };
+        let (document, _buffers, images) = imported;
+        let asset_path = path.to_string_lossy().into_owned();
+        let mut image_paths = Vec::new();
+        let texture_dir = self.asset_root.join("imported");
+        let _ = fs::create_dir_all(&texture_dir);
+
+        for (index, image) in images.iter().enumerate() {
+            let rgba = match image.format {
+                GltfImageFormat::R8 => image::DynamicImage::ImageLuma8(
+                    image::GrayImage::from_raw(image.width, image.height, image.pixels.clone()).unwrap_or_default()
+                ).to_rgba8(),
+                GltfImageFormat::R8G8 => image::DynamicImage::ImageLumaA8(
+                    image::GrayAlphaImage::from_raw(image.width, image.height, image.pixels.clone()).unwrap_or_default()
+                ).to_rgba8(),
+                GltfImageFormat::R8G8B8 => image::DynamicImage::ImageRgb8(
+                    image::RgbImage::from_raw(image.width, image.height, image.pixels.clone()).unwrap_or_default()
+                ).to_rgba8(),
+                GltfImageFormat::R8G8B8A8 => image::RgbaImage::from_raw(image.width, image.height, image.pixels.clone()).unwrap_or_default(),
+                _ => continue,
+            };
+            let out = texture_dir.join(format!(
+                "{}_tex_{index}.png",
+                path.file_stem().and_then(|s| s.to_str()).unwrap_or("asset")
+            ));
+            if rgba.save(&out).is_ok() {
+                image_paths.push(out);
+            }
+        }
+
+        let base_parent = None;
+        let mut node_entities = vec![None; document.nodes().count()];
+        for node in document.nodes() {
+            let entity_id = self.scene.spawn(node.name().unwrap_or("GLTF Node"));
+            node_entities[node.index()] = Some(entity_id);
+            if let Some(entity) = self.scene.entities.get_mut(entity_id) {
+                entity.asset_path = Some(asset_path.clone());
+                entity.asset_node = Some(node.index());
+                entity.parent = base_parent;
+                if let Some(transform) = node.transform().decomposed().into() {
+                    let (translation, rotation, scale) = transform;
+                    entity.transform.position = translation;
+                    entity.transform.scale = scale;
+                    let q = glam::Quat::from_array([rotation[0], rotation[1], rotation[2], rotation[3]]);
+                    let (x, y, z) = q.to_euler(glam::EulerRot::XYZ);
+                    entity.transform.rotation = [x.to_degrees(), y.to_degrees(), z.to_degrees()];
+                }
+                if let Some(mesh) = node.mesh() {
+                    if let Some(primitive) = mesh.primitives().next() {
+                        let material = primitive.material();
+                        let pbr = material.pbr_metallic_roughness();
+                        let base = pbr.base_color_factor();
+                        entity.material.albedo = base;
+                        entity.material.metallic = pbr.metallic_factor();
+                        entity.material.roughness = pbr.roughness_factor();
+                        if let Some(texture) = pbr.base_color_texture() {
+                            let index = texture.texture().source().index();
+                            if let Some(texture_path) = image_paths.get(index) {
+                                entity.material.texture_path = Some(texture_path.to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for node in document.nodes() {
+            if let Some(parent_node) = node.parent() {
+                if let (Some(child), Some(parent)) = (node_entities[node.index()], node_entities[parent_node.index()]) {
+                    if let Some(entity) = self.scene.entities.get_mut(child) {
+                        entity.parent = Some(parent);
+                    }
+                }
+            }
+        }
+
+        if let Some(first) = node_entities.iter().flatten().next() {
+            self.selected = *first;
+        }
+        if let Ok(modified) = fs::metadata(path).and_then(|m| m.modified()) {
+            self.asset_mtimes.insert(path.to_path_buf(), modified);
+        }
+        self.save_scene();
+        eprintln!("Imported GLTF/GLB: {}", path.display());
     }
 
     fn save_scene(&self) {
@@ -551,10 +649,13 @@ impl ApplicationHandler for Editor {
                 window.request_redraw();
             }
             WindowEvent::DroppedFile(path) => {
-                let supported = path.extension().and_then(|e| e.to_str())
-                    .map(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"))
-                    .unwrap_or(false);
-                if supported {
+                let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+                if matches!(ext.as_deref(), Some("glb") | Some("gltf")) {
+                    self.snapshot();
+                    self.import_gltf(&path);
+                } else {
+                    let supported = matches!(ext.as_deref(), Some("png") | Some("jpg") | Some("jpeg"));
+                    if supported {
                     let imported = self.renderer.as_ref().and_then(|renderer| {
                         renderer.load_texture(&path).map_err(|error| {
                             eprintln!("Texture import failed: {error}");
@@ -567,8 +668,9 @@ impl ApplicationHandler for Editor {
                             entity.material.texture_path = Some(path.to_string_lossy().into_owned());
                         }
                     }
-                } else {
-                    eprintln!("Unsupported dropped asset: {}", path.display());
+                    } else {
+                        eprintln!("Unsupported dropped asset: {}", path.display());
+                    }
                 }
                 window.request_redraw();
             }
