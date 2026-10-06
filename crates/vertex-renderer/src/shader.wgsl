@@ -9,6 +9,9 @@ struct Camera {
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
+@group(1) @binding(0) var material_texture: texture_2d<f32>;
+@group(1) @binding(1) var material_sampler: sampler;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,
@@ -19,6 +22,8 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(2) uv: vec2<f32>,
 };
 
 @vertex
@@ -27,6 +32,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.position = camera.view_proj * camera.model * vec4<f32>(input.position, 1.0);
     out.color = input.color;
     out.normal = normalize((camera.model * vec4<f32>(input.normal, 0.0)).xyz);
+    out.uv = input.uv;
     return out;
 }
 
@@ -38,6 +44,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = 0.18;
     let lit = ambient + diffuse * camera.light_color_intensity.w;
     let light_color = camera.light_color_intensity.xyz;
-    let base = input.color * camera.albedo.rgb;
+    let texture_color = textureSample(material_texture, material_sampler, input.uv).rgb;
+    let base = input.color * camera.albedo.rgb * texture_color;
     return vec4<f32>(base * (ambient + light_color * lit), camera.albedo.a);
 }
