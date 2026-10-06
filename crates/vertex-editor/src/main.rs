@@ -41,6 +41,7 @@ struct Editor {
     texture_cache: HashMap<PathBuf, wgpu::BindGroup>,
     asset_mtimes: HashMap<PathBuf, std::time::SystemTime>,
     thumbnail_cache: HashMap<PathBuf, egui::TextureHandle>,
+    mesh_cache: HashMap<(PathBuf, usize), u64>,
 }
 
 impl Default for Editor {
@@ -69,6 +70,7 @@ impl Default for Editor {
             texture_cache: HashMap::new(),
             asset_mtimes: HashMap::new(),
             thumbnail_cache: HashMap::new(),
+            mesh_cache: HashMap::new(),
         }
     }
 }
@@ -151,6 +153,23 @@ impl Editor {
                 }
                 if let Some(mesh) = node.mesh() {
                     if let Some(primitive) = mesh.primitives().next() {
+                        let reader = primitive.reader(|buffer| Some(&_buffers[buffer.index()]));
+                        let positions: Vec<[f32; 3]> = reader.read_positions().map(|v| v.collect()).unwrap_or_default();
+                        let normals: Vec<[f32; 3]> = reader.read_normals().map(|v| v.collect()).unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
+                        let uvs: Vec<[f32; 2]> = reader.read_tex_coords(0).map(|v| v.into_f32().collect()).unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+                        let indices: Vec<u32> = reader.read_indices().map(|v| v.into_u32().collect()).unwrap_or_else(|| (0..positions.len() as u32).collect());
+                        let vertices: Vec<vertex_renderer::Vertex> = positions.iter().enumerate().map(|(i, &position)| vertex_renderer::Vertex {
+                            position,
+                            color: [1.0, 1.0, 1.0],
+                            normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
+                            uv: uvs.get(i).copied().unwrap_or([0.0, 0.0]),
+                        }).collect();
+                        if let Some(renderer) = self.renderer.as_mut() {
+                            match renderer.upload_mesh(&vertices, &indices) {
+                                Ok(handle) => { self.mesh_cache.insert((path.to_path_buf(), node.index()), handle); }
+                                Err(error) => eprintln!("GPU mesh upload failed: {error}"),
+                            }
+                        }
                         let material = primitive.material();
                         let pbr = material.pbr_metallic_roughness();
                         let base = pbr.base_color_factor();
@@ -732,16 +751,30 @@ impl ApplicationHandler for Editor {
                 let material = self.scene.entities.get(self.selected).map(|e| e.material.clone()).unwrap_or_default();
                 let texture_bind_group = material.texture_path.as_ref()
                     .and_then(|path| self.texture_cache.get(Path::new(path)));
-                self.renderer.as_ref().unwrap().render_to_view(
-                    &mut encoder, &view, view_proj, model,
-                    material.albedo,
-                    self.scene.light.direction,
-                    self.scene.light.color,
-                    self.scene.light.intensity,
-                    material.metallic,
-                    material.roughness,
-                    texture_bind_group,
-                );
+                if let Some(entity) = self.scene.entities.get(self.selected) {
+                    if let (Some(asset_path), Some(asset_node)) = (&entity.asset_path, entity.asset_node) {
+                        if let Some(&mesh_id) = self.mesh_cache.get(&(PathBuf::from(asset_path), asset_node)) {
+                            self.renderer.as_ref().unwrap().render_mesh_to_view(
+                                &mut encoder, &view, view_proj, model,
+                                material.albedo, self.scene.light.direction, self.scene.light.color,
+                                self.scene.light.intensity, material.metallic, material.roughness,
+                                texture_bind_group, mesh_id, true,
+                            );
+                        } else {
+                            self.renderer.as_ref().unwrap().render_to_view(
+                                &mut encoder, &view, view_proj, model, material.albedo,
+                                self.scene.light.direction, self.scene.light.color, self.scene.light.intensity,
+                                material.metallic, material.roughness, texture_bind_group,
+                            );
+                        }
+                    } else {
+                        self.renderer.as_ref().unwrap().render_to_view(
+                            &mut encoder, &view, view_proj, model, material.albedo,
+                            self.scene.light.direction, self.scene.light.color, self.scene.light.intensity,
+                            material.metallic, material.roughness, texture_bind_group,
+                        );
+                    }
+                }
                 let device = self.renderer.as_ref().unwrap().device.clone();
                 let queue = self.renderer.as_ref().unwrap().queue.clone();
                 self.render_ui(&window, &device, &queue, &view, &mut encoder);
